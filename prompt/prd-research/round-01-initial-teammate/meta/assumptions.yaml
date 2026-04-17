@@ -1,0 +1,74 @@
+# round-01 고정 전제 — 4 teammate 전원 동일하게 공유한 가정
+# ADR-0001 ~ ADR-0004 근거. 변경 시 ADR 번복 + cross-cutting/decisions-log.md 갱신.
+
+round: 1
+round_label: initial-teammate
+generated_at: 2026-04-17
+
+fixed_premises:
+  development_environment:
+    location: user-local-pc
+    tooling: claude-code-cli
+    anthropic_api_call: allowed-as-dev-tool
+    notes: "사용자 로컬 PC 고정. Anthropic API 호출은 하네스의 개발 도구 레벨 허용."
+
+  product_deployment:
+    status: undecided
+    requirement: commercially-viable
+    architecture_flexibility: required
+    notes: "배포처는 나중에 결정. 배포처를 바꿀 수 있는 유연 아키텍처 필수."
+
+  target_segment:
+    phase_1: b2c-individual-consumer
+    phase_2_optional: b2b-enterprise-hr-eap
+    expansion_path: b2c-first-then-b2b
+    adr_ref: ADR-0001
+
+  priority_relationship_type:
+    tier_1_functional: dating-couples
+    tier_2_marketing_simultaneous:
+      - married-couples
+      - in-law-relationships
+      - workplace-relationships
+    adr_ref: ADR-0002
+
+  legal_positioning:
+    category: self-help-coaching
+    explicit_avoidance:
+      - clinical-psychotherapy
+      - medical-diagnosis
+      - psychiatric-treatment
+    regulatory_boundaries:
+      - 한국 의료법 제27조
+      - 한국 정신건강증진법 제3조
+      - 한국 개인정보보호법 제23조 (민감정보)
+      - 한국 심리서비스 이용자보호법(안, 22대 국회 계류)
+      - GDPR Article 9
+      - Apple App Store Guideline 1.4.1, 5.1.2
+    adr_ref: ADR-0003
+
+assumption_axis_for_teammate_exploration:
+  axis_label: "Privacy-First Local-Capable (A) vs Cloud-Native Feature-Rich (B)"
+  branch_a:
+    name: Privacy-First Local-Capable
+    description: "앱이 유저 기기 로컬 중심 동작, 선택적 E2E 암호화 동기화. 프라이버시를 상업 해자로."
+  branch_b:
+    name: Cloud-Native Feature-Rich
+    description: "서버 중심, E2E 암호화로 프라이버시 보완. AI 품질·크로스디바이스·코칭 연속성 우선."
+  adr_ref: ADR-0004
+  rejected_alternative_axes:
+    - "Claude Code 단독 vs 외부 도구 연동"
+    - "단일 사용자 vs 팀 공유"
+    - "최소 자동화 vs 최대 자동화"
+
+additional_tacit_assumptions:
+  - description: "관계 코칭 앱은 대화·텍스트 기반 상담 + 개선 가이드 (음성·영상 없음 at v1)"
+    origin: "Claude 초기 해석 — 사용자 묵시 승인"
+    challenge_status: "R5 (음성 입력 UX)로 unresolved-axes에 파킹"
+  - description: "단일 사용자용 (팀·다중 사용자 아님)"
+    origin: "Claude 초기 해석 — ADR-0001로 확정"
+  - description: "사용자 본인 상담 용도 (타인 대행 없음)"
+    origin: "Claude 초기 해석"
+  - description: "AgenticWorkflow 메타 시스템은 Claude Code 기반이며 Anthropic API 호출은 '로컬 개발 도구'로 간주"
+    origin: "ABSOLUTE ANCHOR 해석 — 사용자 묵시 승인"
+    rationale: "최종 앱의 런타임 제약과 별개로 다룸"

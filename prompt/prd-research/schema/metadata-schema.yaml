@@ -1,0 +1,87 @@
+# PRD Research 메타데이터 스키마 v1
+# 모든 파일(raw/summary/parking/follow-up/meta/cross-cutting/index)은
+# 본문 최상단에 아래 필드를 YAML frontmatter로 포함한다.
+#
+# 필수 필드는 required: true, 선택 필드는 required: false.
+
+schema_version: 1
+applies_to: /prompt/prd-research/**
+
+fields:
+  round:
+    type: integer
+    required: true
+    description: 조사 차수 (1, 2, 3, ...)
+  round_label:
+    type: string
+    required: true
+    pattern: "[a-z0-9-]+"
+    description: 차수 라벨 (kebab-case). 예 initial-teammate, tech-validation, legal-review.
+  file_kind:
+    type: string
+    required: true
+    enum: [raw, summary, parking-lot, follow-up, meta, cross-cutting, index, readme, schema]
+    description: 파일 종류.
+  teammate_id:
+    type: string
+    required: false
+    pattern: "T[0-9]+"
+    description: teammate 파일에만. 예 T1, T2.
+  teammate_name:
+    type: string
+    required: false
+    description: teammate slug. 예 workflow-architect.
+  axis:
+    type: string
+    required: false
+    description: 조사 축 slug (kebab-case).
+  generated_at:
+    type: date
+    required: true
+    description: 파일 생성 시점 (YYYY-MM-DD).
+  original_question_ref:
+    type: string
+    required: false
+    description: 원본 질문 텍스트가 저장된 파일 경로 + anchor.
+  sources:
+    type: list
+    required: false
+    item_fields:
+      - type: {enum: [project-file, doc, web, paper, law, bench, data]}
+      - path: string (project-file 시)
+      - url: string (doc/web/paper 시)
+      - citation: string (paper/law/bench 시)
+  branch_assumption_axis:
+    type: string
+    required: false
+    description: 이번 차수가 채택한 대립 가정 축. 예 "Privacy-First Local vs Cloud-Native".
+  local_execution_compliance:
+    type: object
+    required: true
+    fields:
+      harness:
+        enum: [compliant, at-risk, violated]
+        description: 개발 하네스가 로컬 실행 전제를 지키는가.
+      product:
+        enum: [local-only, deployment-flexible, cloud-dependent]
+        description: 제품 배포 단계의 아키텍처 분류.
+  notes:
+    type: list
+    required: false
+    description: 특기사항 (로컬 전제 충돌 가능성, 해석 경계 등).
+
+# 확장 규칙 (README.md와 중복 정의 — schema는 기계가 읽고 README는 사람이 읽는다)
+naming_rules:
+  round_folder: "round-NN-<label>/ (NN = 01-99, zero-padded)"
+  raw_file: "T<N>-<teammate-slug>.md OR <axis-slug>.md"
+  summary_file: "<raw-basename>.conclusions.md"
+  parking_lot_file: "round-NN.parking-lot.md"
+  follow_up_file: "round-NN.follow-up.md"
+
+# 파일 쓰기 원칙
+writing_principles:
+  - "raw/ 는 원문 100% 보존. frontmatter만 추가."
+  - "summary/ 는 원문 내부의 명시적 결론 섹션만 기계적 추출. 재해석·재조합·보충 금지."
+  - "parking-lot/ 는 teammate 보고서의 파킹 로트 섹션 통합."
+  - "follow-up/ 는 teammate 보고서의 후속 심층조사 섹션 통합."
+  - "meta/ 는 차수 고유 설정. cross-cutting/ 는 차수 무관 누적 자료."

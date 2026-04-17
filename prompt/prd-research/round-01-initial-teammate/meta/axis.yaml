@@ -1,0 +1,89 @@
+# round-01 커버 축 목록
+# 각 teammate가 다룬 조사 축을 나열. 종합 단계 재조합 시 중복·누락 검출에 사용.
+
+round: 1
+round_label: initial-teammate
+generated_at: 2026-04-17
+
+# teammate별 커버 축
+axes_covered:
+  T1_workflow_architect:
+    raw_file: raw/T1-workflow-architect.md
+    axes:
+      - harness-pipeline-structure
+      - claude-md-and-dot-claude-directory
+      - hooks-for-regulatory-and-privacy-guards
+      - multi-agent-orchestration
+      - external-tools-and-mcp-servers
+      - claude-code-actual-limits
+      - branch-a-app-architecture
+      - branch-b-app-architecture
+
+  T2_scenario_explorer:
+    raw_file: raw/T2-scenario-explorer.md
+    axes:
+      - dating-couples-conflict-topology
+      - married-in-law-workplace-scenarios-for-marketing
+      - competitor-landscape-global
+      - competitor-landscape-korea
+      - competitor-landscape-traditional-therapy-boundary
+      - scenario-x-branch-matrix
+      - scenario-priority-4-axis-evaluation
+      - self-help-coaching-boundary-definition
+      - crisis-referral-protocol
+      - platform-hypothesis-mobile-first
+
+  T3_operator_analyst:
+    raw_file: raw/T3-operator-analyst.md
+    axes:
+      - user-psychology-during-conflict
+      - persona-power-user
+      - persona-first-time-crisis
+      - persona-long-term-returning
+      - 9-stage-user-journey
+      - privacy-trust-signal-portfolio
+      - per-persona-feature-requirements
+      - complexity-tolerance-thresholds
+      - emotional-safety-design
+      - community-social-risk
+      - branch-a-vs-b-user-experience
+      - commercialization-acceptance
+
+  T4_sustainability_strategist:
+    raw_file: raw/T4-sustainability-strategist.md
+    axes:
+      - harness-token-economy
+      - harness-maintenance-burden
+      - product-llm-cost-branch-a
+      - product-llm-cost-branch-b
+      - pricing-model-comparison
+      - competitor-pricing-benchmark
+      - regulatory-risk-matrix-korea
+      - regulatory-risk-matrix-global
+      - data-governance
+      - expansion-limits-b2c-to-b2b-and-languages
+      - long-term-maintenance-1-to-3-years
+      - scenario-6-12-24-months
+
+# 4 teammate 전원이 동시에 다룬 교차 축 (합의도 높음)
+cross_teammate_consensus_axes:
+  - axis: hybrid-ai-architecture
+    teammates: [T1, T2, T3, T4]
+    status: converged
+    decision_ref: ADR-0005
+  - axis: clinical-language-blocking-as-hook
+    teammates: [T1, T4]
+    status: converged
+    implementation_note: ".claude/hooks/scripts/block_clinical_language.py (신규 제안)"
+  - axis: partner-data-isolation-schema
+    teammates: [T1, T3, T4]
+    status: converged
+  - axis: crisis-referral-protocol-korea
+    teammates: [T2, T3, T4]
+    status: converged
+  - axis: mobile-first-with-web-secondary
+    teammates: [T2, T3]
+    status: converged
+
+# 1차 조사에서 다뤄지지 않은 축 (R1-R12)
+not_covered_axes_ref: ../../cross-cutting/unresolved-axes.md
