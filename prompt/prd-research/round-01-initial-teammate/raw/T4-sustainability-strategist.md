@@ -317,3 +317,101 @@ ADR-0005에서 채택한 3-tier hybrid 구조의 세션당 비용:
 - **민감 상담·안전 케이스는 Tier 3 Opus + 인간**: 비용 높아도 안전·차별화 핵심.
 
 ---
+
+## §4. 과금 모델 비교 (Pricing Model Comparison)
+
+### 4.1 주요 과금 모델 유형
+
+**모델 A — Pure Freemium Subscription**:
+- Free tier(제한적) + Premium 월/연 구독.
+- 예시: Lasting(월 $11.99), Paired(월 $9.99, 연 $29.99), Replika(월 $9.99).
+- 장점: 유저 불안 최소 (정액제) · 예측 가능 매출.
+- 단점: 무료 유저가 비용 유발 (Branch B일 때 특히 심각).
+
+**모델 B — Usage-Based (토큰·세션)**:
+- 세션당 결제 또는 월 토큰팩 충전.
+- 예시: OpenAI API, Character.ai 일부 tier.
+- 장점: 매출-비용 선형 일치.
+- 단점: **관계 위기 순간의 과금 불안** → Replika 2023 이탈 선례 (D-4 참조).
+- **본 프로젝트 적용 불가** (B2C 금지).
+
+**모델 C — Hybrid Freemium + Token Pack**:
+- Free + Premium 구독 + 옵션 토큰팩(장시간 세션·전문가 매칭).
+- 예시: Wysa (구독 + therapist add-on).
+- 장점: 가벼운 유저는 구독, 헤비유저는 토큰팩.
+- 단점: 복잡도 증가 · UX 커뮤니케이션 난이도.
+
+**모델 D — One-time Purchase + In-App**:
+- 앱 구매 후 개별 콘텐츠 결제.
+- 예시: Gottman Card Decks, Love Nudge 일부.
+- 장점: 부담 없는 진입.
+- 단점: 지속 매출 어려움.
+
+**모델 E — B2B SaaS (조직 계약)**:
+- 회사·EAP(Employee Assistance Program)·건강보험사가 구독.
+- 예시: Ginger, Lyra Health.
+- 장점: ARPU 매우 높음, 이탈률 낮음.
+- 단점: Sales cycle 길고, B2C 플라이휠 약함.
+
+### 4.2 본 프로젝트 권장 구조 (ADR-0005 수렴 기반)
+
+**Phase 1 (출시 0-6개월)**: **Pure Freemium Subscription (모델 A)**
+- Free tier:
+  - Tier 1 로컬 LLM 무제한.
+  - 공감·대화 번역·감정 temperature check 무제한.
+  - Tier 2 클라우드 Sonnet 월 5회 제한.
+- Premium (월 9,900원 / 연 79,000원):
+  - Tier 2 Sonnet 무제한.
+  - 4 Horsemen 진단·NVC 코치·Gottman 카드덱 Pro.
+  - 커플 함께 쓰기 기능.
+- Premium+ (월 24,900원):
+  - Tier 3 Opus + 전문가 1:1 채팅 월 2회.
+  - 위기 리퍼럴 fast-track.
+
+**Phase 2 (6-12개월)**: 모델 C로 확장 — **Hybrid Freemium + Token Pack 검토**
+- 전문가 매칭 토큰팩 (1회 30분, 30,000원) 옵션.
+- 커플 워크숍 (4주 프로그램, 150,000원) 추가.
+
+**Phase 3 (12-24개월)**: 모델 E B2B 병행
+- 기업 EAP 파트너십 (연 1,000만원~, 직원당 연 12,000원 수준).
+- 결혼 준비 업체 제휴 (웨딩홀·혼수).
+
+### 4.3 과금 모델 비교 매트릭스
+
+| 모델 | 본 프로젝트 적합성 | 수익 안정성 | 유저 경험 | 구현 복잡도 | 경쟁사 선례 |
+|---|---|---|---|---|---|
+| A (Pure Freemium) | ★★★★★ | ★★★★☆ | ★★★★★ | ★★☆☆☆ | Lasting·Paired |
+| B (Usage-based) | ☆☆☆☆☆ (B2C 금지) | ★★★☆☆ | ★☆☆☆☆ | ★★☆☆☆ | Character.ai (이탈) |
+| C (Hybrid) | ★★★★☆ | ★★★★★ | ★★★☆☆ | ★★★★☆ | Wysa |
+| D (One-time) | ★★☆☆☆ | ★★☆☆☆ | ★★★★☆ | ★★☆☆☆ | Gottman Cards |
+| E (B2B) | ★★★☆☆ (Phase 3) | ★★★★★ | N/A | ★★★★★ | Lyra·Ginger |
+
+### 4.4 가격 포인트 검증
+
+- **한국 구독 앱 평균 ARPU** (Sensor Tower 2024): 월 4,500-12,000원.
+- **유사 카테고리 벤치마크**:
+  - 삼성 헬스+: 월 4,900원.
+  - 정신건강 앱 트로스트: 월 9,900원.
+  - Wysa 한국: 연 99,000원.
+- **페르소나별 지불 의향** (T3 §10):
+  - 페르소나 B (위기): 월 9,900-14,900원 즉시 지불 의향.
+  - 페르소나 A (파워 유저): 월 14,900-24,900원, 연 10-20% 할인 선호.
+  - 페르소나 C (장기 복귀): 저가 freemium 유지 → 연 구독 가능.
+
+**결론**: 월 9,900원 / 연 79,000원 / 프리미엄 24,900원 구조가 한국 시장 중앙값과 정렬.
+
+### 4.5 과금 모델 리스크
+
+- **Freemium 무료 유저 비용**: Branch B pure는 freemium 무한 대화 시 파산. 3-tier Hybrid가 해결.
+- **구독 피로도**: Netflix·Disney+·YouTube 등 포화. **트라이얼 7일 → 전환률** 핵심.
+- **연 구독 refund 정책**: Apple/Google 앱스토어 환불 규정 준수.
+- **가격 상승 커뮤니케이션**: 서비스 성숙 시 가격 인상은 유저 이탈 리스크.
+
+### 4.6 과금 모델 종합 판정
+
+- **Phase 1 필수**: Pure Freemium Subscription (모델 A) — 단순·명확·경쟁사 검증.
+- **토큰팩은 Phase 2 이후**: 가치 증명 후 추가.
+- **Usage-based B2C 영구 금지**: D-4 재확인.
+- **B2B는 Phase 3 선택지**: 본 B2C 플라이휠 확정 후.
+
+---
