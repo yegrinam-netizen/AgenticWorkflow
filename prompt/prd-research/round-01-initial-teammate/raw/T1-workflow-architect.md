@@ -249,3 +249,72 @@ C1이 모든 요소의 루트. C2·C3는 병렬 구축 가능. C4는 C2에 의�
 - NO-3, NO-4, NO-5는 본 보고서 T1에서 최초 제기. 후속 차수에서 별도 ADR 등록 후보.
 
 ---
+
+## §4. Branch A 상세 결론 (Privacy-First Local-Capable)
+
+**가정**: 앱이 유저 기기 로컬 중심으로 동작하고, 동기화는 E2E 암호화를 거친 선택적 경로만 사용. 프라이버시를 상업 해자로 전면 배치.
+
+### 4.1 하네스 자체 구조 (Branch A 전제에 맞춘 [L0] 설계)
+
+Branch A 선택이 하네스에 미치는 영향은 "앱 런타임 제약을 하네스가 이해해야 한다"는 점이다. 하네스 자체의 실행 환경은 여전히 사용자 로컬 PC(ABSOLUTE ANCHOR ②).
+
+- **`.claude/agents/` 구성 (Branch A 특화)**:
+  - `@local-llm-capability-analyst` (신규) — 온디바이스 LLM(EXAONE 3.5 7.8B, Solar Pro, Qwen 2.5 7B, Gemma 2 등) 한국어 성능·메모리·배터리 프로필 분석 전담.
+  - `@on-device-ml-optimizer` (신규) — MLX(Apple Silicon)·Core ML·TFLite·ONNX 양자화(4bit·8bit)·토큰 속도 최적화 조언.
+  - `@e2e-encryption-designer` (신규) — libsignal·Noise Protocol·WebCrypto 기반 파트너 간 공유 채널 암호화 스펙 설계.
+  - `@regulatory-compliance-auditor`, `@conflict-psychology-researcher`, `@persona-empathy-simulator`는 공통.
+
+- **`workflows/` 카탈로그 (Branch A 전용 feature)**:
+  - `feature-local-llm-bundling.md` — 앱 번들에 로컬 모델 포함(초기 설치 대용량) vs 첫 실행 시 다운로드 선택 로직.
+  - `feature-on-device-inference-harness.md` — 모바일 RN 브리지·iOS Metal·Android NNAPI 연결.
+  - `feature-partner-e2e-sync.md` — 파트너 간 세션 공유 프로토콜 + 키 교환 UX.
+  - `feature-offline-first-storage.md` — SQLite(암호화)·WatermelonDB·RxDB 선택, 충돌 해결 전략.
+  - `feature-optional-cloud-telemetry.md` — 동의 기반 익명 관측성(Sentry 해싱·차분 프라이버시).
+
+- **Hook 구성 (Branch A 특화 강화)**:
+  - 기존 `output_secret_filter.py` 외에 `validate_no_external_data_egress.py` 신설 — 생성된 앱 코드에 대화 본문이 외부 엔드포인트로 전송되는 패턴(fetch/axios/HttpClient.post + conversation payload) 탐지 시 exit 2.
+  - `validate_local_first_marketing_claim.py` — 마케팅 카피·스토어 설명·프라이버시 정책 파일이 "완전 로컬" 표현을 쓰는 경우, 실제 코드에 남은 외부 호출 목록을 diff로 자동 첨부. NO-5 방지.
+
+- **테스트 전략 (하네스가 자동 생성)**:
+  - RN Detox·iOS UITest·Android Espresso의 **airplane mode 테스트**: 네트워크 off 상태에서도 핵심 코칭 기능이 동작하는지 검증. 하네스가 CI 스크립트에 자동 주입.
+  - 모델 응답 품질 측정은 **오프라인 골든셋**(합성 대화) 기반. 점수 하락 시 PR 차단.
+
+### 4.2 하네스가 생성하는 앱 아키텍처 (Branch A, [L1] 설계)
+
+관계 코칭 앱의 **최종 사용자 런타임**은 모바일 우선(iOS·Android), 웹 부차. Branch A에서는 대부분 기능이 기기 내부에서 완결된다.
+
+- **레이어 구성**:
+  - **UI 레이어**: React Native(단일 코드베이스 우선) 또는 네이티브(iOS Swift / Android Kotlin). v1은 RN 권장 — 개발 속도·하네스 자동 생성 난이도.
+  - **상태 관리**: Zustand/Redux + 로컬 SQLite/SQLCipher (암호화 저장).
+  - **AI 추론 레이어** (핵심):
+    - `LocalLLMClient` — MLX(Apple)·MediaPipe Llama(Android)·llama.cpp 기반. 모델 로딩·프롬프트 템플릿·토큰 스트리밍·배터리 프로파일.
+    - 모델 후보: EXAONE 3.5 7.8B(한국어 최상, KMMLU 63.7%), Solar Pro 10.7B(LG), Qwen 2.5 7B, Gemma 2 9B.
+    - 양자화: 4bit 필수(모바일 메모리 제약). 8GB RAM 이상 기기에서도 빠듯함 — 7B가 현실적 상한.
+  - **대화 오케스트레이터**: 상황 분류기(갈등 단계·감정 상태) → 프레임워크 선택(Gottman/NVC/IFS) → 프롬프트 조립 → 로컬 LLM 호출 → 안전 필터 후처리.
+  - **안전 필터 (앱 내부)**: 생성 응답에 임상 언어·진단·처방이 포함되면 재생성 또는 대체 문구 삽입. 크라이시스 키워드 발견 시 1393/1366 안내 카드 강제 삽입.
+  - **파트너 공유 레이어**: 사용자가 명시적으로 초대한 파트너와의 세션 공유. libsignal 기반 E2E + Perfect Forward Secrecy. 서버는 ciphertext relay 역할만.
+
+- **데이터 저장 모델**:
+  - 대화 세션: `sessions` 테이블 (SQLCipher 암호화). `created_at`·`persona_tag`·`conflict_stage`·`summary_local`(LLM 로컬 생성).
+  - 원문 메시지: `messages` 테이블. **서버로 절대 전송 금지** 플래그.
+  - 사용자 프로파일: `profile` (로컬). 개인화 파라미터(선호 프레임워크·갈등 패턴 요약).
+  - 익명 관측성: `telemetry_events` (동의 시만 전송). 이벤트는 사전 해싱·차분 프라이버시 적용.
+
+- **배포·업데이트**:
+  - App Store·Play Store. 앱 크기 3-8GB(모델 번들 포함) — Apple 200MB 초기 다운로드 제한 고려하여 **온디맨드 리소스**(iOS) / **동적 feature**(Android) 활용.
+  - 모델 업데이트는 OTA(in-app) 다운로드 + 체크섬 검증. 하네스가 업데이트 스크립트 자동 생성.
+
+- **비용·수익 모델 (Branch A)**:
+  - LLM 호출 비용 **0원** (기기 내부 계산). 전력·메모리는 사용자 부담.
+  - 매출 구조는 구독 기반(월 9,900 / 연 79,000) + 프리미엄(월 24,900, 인간 코치 제한 접근). 상세는 T4 담당.
+  - 서버 비용: 인증·결제·E2E relay·opt-in 텔레메트리에 한정 → 매우 낮음 (유저 1인당 월 50-200원 추정).
+
+- **리스크**:
+  - 한국어 로컬 LLM 품질이 관계 상담 난이도에서 Sonnet 대비 60-70% 수준(T4 §3.1). 페르소나 B(위기 first-time)는 품질 민감도 가장 높음 → 이탈 위험.
+  - iOS 빌드 경로가 Linux 하네스에서 불가 — Expo EAS Cloud Build 또는 macOS 러너 필요(§7.6).
+  - 배터리·발열 이슈 — 세션당 3-5분 연속 추론 시 모바일 발열 체감. UX 설계에서 로딩·분할 응답으로 완화 필요.
+  - B2B 확장성 낮음. 기업 SSO·감사 로그·요금제가 로컬 앱에 부적합(T4 §8.1).
+
+- **Pure Branch A 기각 사유**: `meta/discarded-options.md#D-1` 참조. 본 §4.2는 **Hybrid 아키텍처의 Tier 1(로컬 경량)** 컴포넌트로 재활용된다는 전제 아래 기술.
+
+---
