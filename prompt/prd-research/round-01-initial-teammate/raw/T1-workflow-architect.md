@@ -84,3 +84,91 @@ notes:
   - **Hook-level 감정 안전망**: 크라이시스 키워드(자살·자해·폭력) 탐지 시 즉시 1393/1366/112 안내 문구 삽입 로직을 앱 코드에 삽입하도록 하네스가 자동 생성 — 이것도 workflow.md의 한 단계로 명시.
 
 ---
+
+## §2. 필수 구성 요소 (Top 5, 복잡도 표기)
+
+하네스가 "상업화 가능한 관계 코칭 앱"을 생성·유지·개선하기 위해 반드시 갖춰야 할 구성 요소 5개. 각 항목은 **복잡도 등급**(낮음/중간/높음/매우 높음)과 **구현 예상 분량**(LOC = lines of code / 파일 수)을 함께 기록한다.
+
+### C1 — `workflows/` 카탈로그 + `roadmap.yaml` (복잡도: 중간)
+
+- **역할**: 앱 전체를 기능 단위로 쪼개 병렬·순차 실행 가능하게 만드는 중앙 인덱스.
+- **구성**:
+  - `workflows/feature-<slug>.md` × N개 (v1 기준 8-12개 예상).
+  - `workflows/_shared/domain-terms.md`, `workflows/_shared/conflict-patterns.md`, `workflows/_shared/safety-rules.md`.
+  - 루트 `roadmap.yaml` — feature 상태·의존성·우선순위·Branch 호환성 기록.
+- **복잡도 근거**: YAML 스키마 설계·의존성 그래프 검증·충돌 해결이 필요하지만, 기존 `workflow-generator` 스킬 확장으로 해결 가능.
+- **구현 예상 분량**: `roadmap.yaml` 200-400줄 / feature workflow 당 400-800줄 / `_shared/` 3개 파일 각 100-200줄.
+- **선행 의존**: 없음. 다른 모든 구성 요소의 루트.
+
+### C2 — `.claude/hooks/scripts/` 의 심리·규제 전용 Hook 세트 (복잡도: 높음)
+
+- **역할**: self-help coaching 경계 위반·임상 언어·민감 데이터 투입을 **실행 레벨**에서 차단.
+- **구성** (신규 5개 + 기존 확장 2개):
+  - `block_clinical_language.py` (신규, PostToolUse(Edit|Write)) — 임상 용어 차단.
+  - `validate_self_help_boundary.py` (신규, Stop) — 생성 콘텐츠 경계 검증.
+  - `block_pii_in_prompts.py` (신규, PreToolUse) — 개발 중 실사용자 대화 투입 차단.
+  - `validate_crisis_referral_insertion.py` (신규, Stop) — 크라이시스 핫라인 문구 자동 삽입 검증.
+  - `validate_korean_regulatory_terms.py` (신규, PostToolUse) — PIPA·의료법·정신건강증진법 관련 필수 문구 체크.
+  - `output_secret_filter.py` **확장** — PII 대화 패턴 추가(주민번호·전화번호·연락처 포맷).
+  - `block_destructive_commands.py` **확장** — 관계 코칭 DB 스키마 drop 방지 규칙 추가.
+- **복잡도 근거**: 각 Hook은 exit code 2로 강제 차단 가능해서 파급력이 크다. 패턴 설계가 느슨하면 false positive로 개발 전체 정체. 패턴 설계가 엄격하면 LLM 탈선 시 사고. 균형점 찾기 어려움.
+- **구현 예상 분량**: 신규 5개 각 150-300줄, 확장 2개 각 +50-100줄. 테스트 파일(`_test_*.py`) 각 100-200줄.
+- **선행 의존**: C1의 `_shared/safety-rules.md` (패턴 소스 역할).
+
+### C3 — Sub-agent 풀: 도메인 전문 에이전트 팀 (복잡도: 중간)
+
+- **역할**: 관계 코칭 도메인의 전문 지식을 `.claude/agents/` 아래 독립 에이전트로 모듈화.
+- **구성**:
+  - `@conflict-psychology-researcher` — Gottman·NVC·IFS 프레임워크 조사 전담.
+  - `@korean-relationship-culture-analyst` — 한국 특수 관계 문화(고부·직장 위계·유교 영향) 분석.
+  - `@crisis-protocol-verifier` — 크라이시스 감지·1393 등 핫라인 안내 로직 검증.
+  - `@regulatory-compliance-auditor` — PIPA·의료법·App Store 심사 경계 감사.
+  - `@persona-empathy-simulator` — 페르소나 A/B/C 시점에서 앱 흐름 시뮬레이션.
+  - 기존 재사용: `@translator`, `@reviewer`, `@fact-checker`.
+- **복잡도 근거**: Task tool 공식 병렬 한도 5-10개(§7.4) 내에서 조합 가능. 각 에이전트의 system prompt가 도메인 정확성을 좌우하므로 심리학 문헌 인용 품질이 핵심.
+- **구현 예상 분량**: 각 에이전트 md 파일 200-500줄. 총 5개 신규 = 1,000-2,500줄.
+- **선행 의존**: C1의 `_shared/conflict-patterns.md` (도메인 지식 베이스).
+
+### C4 — 외부 도구·MCP 서버 연동 (복잡도: 높음)
+
+- **역할**: Claude Code 단독으로 불가능한 영역(앱 빌드·결제·DB·실기기 테스트)을 외부 도구로 위임.
+- **구성**:
+  - **Git/GitHub MCP** (이미 연결됨) — 저장소 조작·PR·이슈.
+  - **Expo EAS CLI** (신규) — iOS/Android 빌드·제출. Claude Code는 Bash로 호출만.
+  - **Stripe MCP 또는 CLI** (신규) — 구독 상품 생성·테스트. 한국 PG(토스페이먼츠)는 별도 SDK.
+  - **Supabase/PostgreSQL MCP** (신규 또는 Bash) — DB 스키마 마이그레이션. Branch B 채택 시 필수.
+  - **Playwright MCP** (신규) — 웹 앱 E2E 테스트 자동화.
+  - **Sentry MCP** (신규) — 에러 관측성. 프로덕션 이후 필수.
+- **복잡도 근거**: MCP 표준이 2026 기준 성숙하지만 각 서비스별 인증·rate limit·비용이 다름. 실패 시 하네스 루프가 멈추므로 retry/fallback 로직 필요.
+- **구현 예상 분량**: 각 MCP 설정 50-150줄(`settings.json` 추가) + wrapper 스크립트 100-300줄.
+- **선행 의존**: C2(PII 필터가 MCP 경유 요청에도 적용되어야 함), `block_destructive_commands.py`(MCP 경유 파괴 명령 차단).
+
+### C5 — Dual-Layer 저장소 구조 + 상태·결정 로그 (복잡도: 낮음-중간)
+
+- **역할**: 하네스 자체 코드·설정과 하네스가 생성한 앱 소스를 명확히 분리하고, 모든 중요한 결정을 추적 가능하게 만듦.
+- **구성**:
+  - 하네스 층: `.claude/`, `CLAUDE.md`, `AGENTS.md`, `docs/protocols/`, `workflows/`, `prompt/`.
+  - 앱 층: `product/app/` (프론트엔드 RN/웹), `product/backend/` (Branch B 서버), `product/shared/` (공통 타입·상수).
+  - 상태/결정 로그: `DECISION-LOG.md` (기존), `product/DECISION-LOG.md` (신규, 앱 레벨 ADR), `prompt/prd-research/cross-cutting/decisions-log.md` (연구 ADR).
+  - 상태 파일: `state.yaml` (워크플로우 실행 상태), `product/state.json` (앱 feature flag 상태).
+- **복잡도 근거**: 구조 자체는 단순. 다만 하네스가 앱 층에 쓰기 작업할 때 경로 혼동 방지 규칙(예: `product/` 외부에 앱 소스 생성 금지)을 validator로 강제해야 함.
+- **구현 예상 분량**: 디렉터리 스캐폴드는 수 KB. `validate_dual_layer_boundary.py` (신규 validator) 100-200줄.
+- **선행 의존**: C1 (roadmap.yaml이 이 구조를 전제로 feature path 명세).
+
+### 구성 요소 간 의존성 그래프
+
+```
+roadmap.yaml (C1)
+  ├─ workflows/feature-*.md (C1)
+  │    └─ sub-agent 호출 → C3
+  │    └─ 외부 도구 호출 → C4
+  │    └─ 앱 소스 쓰기 → C5 경로
+  ├─ _shared/safety-rules.md (C1)
+  │    └─ Hook 패턴 소스 → C2
+  └─ _shared/conflict-patterns.md (C1)
+       └─ sub-agent 도메인 지식 → C3
+```
+
+C1이 모든 요소의 루트. C2·C3는 병렬 구축 가능. C4는 C2에 의존(보안 필터가 MCP 요청에도 걸려야 함). C5는 독립적으로 가장 먼저 스캐폴드 가능.
+
+---
