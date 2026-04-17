@@ -401,3 +401,62 @@ Branch A 선택이 하네스에 미치는 영향은 "앱 런타임 제약을 하
 - **Pure Branch B 기각 사유**: `meta/discarded-options.md#D-2` 참조. 본 §5.2는 **Hybrid 아키텍처의 Tier 2·3(클라우드 Sonnet·Opus+인간)** 컴포넌트로 재활용된다는 전제 아래 기술.
 
 ---
+
+## §6. Branch A vs B 비교 — Claude Code 실제 기능 기반 판단
+
+Pure A·Pure B 어느 쪽도 단독으로는 "상업화 가능한 관계 코칭 앱"을 성립시키지 못한다는 결론(ADR-0005)에 도달하기까지의 비교 분석. 판단 기준은 관념적 선호가 아니라 **Claude Code로 실제 무엇을 생성·유지할 수 있는가**이다.
+
+### 6.1 10개 축 비교표
+
+| 축 | Branch A (Privacy-First Local) | Branch B (Cloud-Native) | 승자 | 비고 |
+|---|---|---|---|---|
+| 한국어 AI 품질 (관계 상담) | 60-70% (EXAONE 3.5 7.8B 기준, Sonnet=100) | 100% (Claude Sonnet 기준선) | B | T4 §3.1 근거 |
+| 오프라인 가용성 | 완전 가용 | 불가 (캐시된 자료 열람만) | A | 페르소나 B 위기 순간 가치 |
+| 프라이버시 신뢰 신호 | 강함 (기기 내 완결) | 약함 (E2E 옵션·DPA로 보완) | A | T3 §1.5 Consumer Reports 58% |
+| 크로스디바이스 연속성 | 제한적 (파트너 공유 E2E 필요) | 강함 (사용자 계정 기반 자동) | B | |
+| 파트너 공유 기능 구현 난이도 | 높음 (libsignal·키 교환 UX) | 낮음 (서버 중재) | B | T2 §4 매트릭스 |
+| 모델 업데이트 난이도 | 높음 (OTA 3-8GB) | 낮음 (서버 배포) | B | T4 §3.1 |
+| B2C→B2B 확장성 | 낮음 (SSO·감사·요금제 부적합) | 높음 (SaaS 표준) | B | T4 §8.1 |
+| 규제 컴플라이언스 부담 | 낮음 (데이터 이동 최소) | 높음 (PIPA 제23조·국외이전·DPIA) | A | T4 §6.1 |
+| 단기 매출 마진 | 높음 (LLM 원가 0) | 중간 (원가 30-60%) | A | T4 §3 |
+| 심사·앱스토어 통과 | 낮은 마찰 (로컬 처리 어필) | 높은 마찰 (건강·AI 카테고리 엄격화) | A | T2 §3.4 |
+
+**요약**: A는 "가치·마진·규제", B는 "품질·기능·확장성". 어느 축도 0점이 없어서 한 쪽을 선택하면 다른 축의 손실이 크다.
+
+### 6.2 Claude Code 자동 생성 가능성 측면의 비교
+
+하네스(Claude Code)가 각 Branch의 구성 요소를 얼마나 안정적으로 자동 생성·유지할 수 있는가를 기능별로 평가.
+
+- **React Native UI/화면 로직**: 양 Branch 동일하게 **강함**. 공식 문서·오픈소스·템플릿 풍부. 하네스 워크플로우가 컴포넌트·훅·네비게이션을 높은 정확도로 생성.
+- **백엔드 API (Branch B)**: **강함**. Hono/Express/Fastify 패턴 보편, TypeScript 타입 + ORM(Drizzle/Prisma) 정합성 검증까지 하네스가 수행 가능.
+- **로컬 LLM 통합 (Branch A)**: **중간**. MLX·llama.cpp의 RN 바인딩은 비교적 최신 영역이라 공개 예제가 부족. 하네스가 초안은 생성해도 플랫폼별 크래시·메모리 이슈 디버깅은 인간 개입 필요성 높음.
+- **libsignal·Noise Protocol 통합 (Branch A)**: **약함**. 암호 프로토콜은 오류 시 치명적이라 하네스 자동 생성보다 **전문가 감수** 위주. 하네스는 래퍼·테스트 스캐폴드 역할.
+- **iOS/Android 빌드 (양 Branch)**: Claude Code 단독 불가 (§7.6). Expo EAS 경로 또는 macOS 러너 필수.
+- **결제 통합 (양 Branch)**: **중간**. Stripe는 잘 알려져 있어 안정적. 토스페이먼츠·Apple IAP·Google Play Billing은 한국 특수 조건으로 인간 QA 필수.
+- **관측성 + 프라이버시 필터 (Branch B)**: **중간**. Sentry·PostHog 설정 보편적이지만 PII 마스킹 규칙을 도메인 맞춤으로 설계해야 하며 하네스 단독 정확도 낮음.
+- **DB 암호화 스키마 (Branch B)**: **중간**. pgcrypto·KMS 패턴 보편. 하네스가 생성하되 `validate_dpa_coverage.py` 류 Hook으로 검증 병행.
+
+### 6.3 Pure A 또는 Pure B 단독 결론의 구조적 불가
+
+- **Pure A 단독 불가**: 한국어 품질 격차가 페르소나 B의 가치 제안 파괴적. "위기 상황에서 도움이 됐다"는 첫 경험을 만들어야 하는데 로컬 LLM만으로는 확률적 실패.
+- **Pure B 단독 불가**: 관계 대화 데이터는 민감정보의 농도가 극단적으로 높음. "대화가 어디로 가는가"에 대한 유저 불안이 초기 전환율을 직접 파괴(T3 §1.5).
+
+### 6.4 Hybrid 수렴 결론 (ADR-0005)
+
+4 teammate 전원이 독립적으로 수렴한 **3-tier Hybrid**:
+
+- **Tier 1 (로컬 경량)**: 온디바이스 LLM(EXAONE 3.5 7.8B 등)이 첫 응답·감정 감지·요약·오프라인 모드 담당. 대화 본문은 서버 전송 없음.
+- **Tier 2 (클라우드 Sonnet)**: 사용자 동의 기반, 복잡한 갈등·긴 맥락·프레임워크 심화 코칭에 Claude Sonnet 호출. 전송 전 PII 마스킹·사용자 확인.
+- **Tier 3 (클라우드 Opus + 인간)**: 위기 감지·심각 갈등·유료 프리미엄 세션에서 Claude Opus + 인간 코치 에스컬레이션. 인간 개입은 법적 안전 테두리와 self-help 경계선 최종 보장.
+
+이 Hybrid는 Branch A의 "프라이버시·마진·오프라인" 장점과 Branch B의 "품질·연속성·확장성" 장점을 층으로 분리한다. 사용자는 설정에서 **어느 Tier까지 허용할지 명시적 토글**할 수 있어야 한다 — 이 토글 자체가 프라이버시 신뢰 신호가 된다.
+
+### 6.5 Hybrid의 하네스 구현 함의
+
+- `workflows/feature-ai-tier-router.md` (신규) — 런타임에 Tier를 선택하는 라우팅 로직.
+- `workflows/feature-consent-ux-per-tier.md` (신규) — Tier별 동의 UX. UI 문구·안내 카드·감사 로그.
+- `workflows/feature-pii-masking-pre-cloud.md` (신규) — Tier 2·3 호출 직전 PII 마스킹·동의 상태 재확인.
+- `@tier-routing-policy-designer` (신규 agent) — 라우팅 규칙·폴백·비용 임계선 설계 전담.
+- 기존 Hook 세트 재사용 + `validate_tier_consent_flow.py` 신설.
+
+---
