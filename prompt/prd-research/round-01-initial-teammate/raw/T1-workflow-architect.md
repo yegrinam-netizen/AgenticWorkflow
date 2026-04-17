@@ -172,3 +172,80 @@ roadmap.yaml (C1)
 C1이 모든 요소의 루트. C2·C3는 병렬 구축 가능. C4는 C2에 의존(보안 필터가 MCP 요청에도 걸려야 함). C5는 독립적으로 가장 먼저 스캐폴드 가능.
 
 ---
+
+## §3. 구조적으로 절대 피해야 할 것 (NO-1 ~ NO-6)
+
+조사 과정에서 "겉보기에는 효율적이지만 구조적으로 반드시 실패하는 선택지"를 식별했다. 각 항목은 **왜 구조적으로 실패하는가**와 **대안**을 함께 기술한다. 이 목록은 `meta/discarded-options.md`와 상호 참조된다.
+
+### NO-1 — 단일 거대 `workflow.md`로 앱 전체를 한 번에 생성
+
+- **왜 실패하는가**:
+  - `state.yaml`의 `current_step`이 200+로 폭증. 재시도 예산(RB1-RB3)이 의미 상실.
+  - Claude Code 컨텍스트 윈도우를 200K→실질 60-70K로 활용해도, 도구 결과·에이전트 출력 누적 시 한 workflow 중간에 반드시 `/compact` 트리거.
+  - 압축 후 초기 지시와의 연속성 붕괴 — 앱 전반의 일관성(네이밍·톤·도메인 용어) 파손.
+- **대안**: 원칙 2 (§1) — 기능 단위 `workflows/feature-<slug>.md` 카탈로그 + `roadmap.yaml` 중앙 인덱스.
+- **실패 사례 근거**: 기존 `workflow-generator` 스킬 실험 중 500줄 이상 단일 workflow 실행 시 50% 이상 중단 관찰(추정, 공식 데이터 없음).
+
+### NO-2 — 실사용자 대화 데이터를 개발 단계 Claude 컨텍스트에 직접 투입
+
+- **왜 실패하는가**:
+  - 하네스 개발 중이라도 실 사용자 대화 샘플을 Claude에 붙여넣는 순간 Anthropic 서버로 전송됨.
+  - `output_secret_filter.py`가 시크릿은 차단하나 **PII 대화 본문은 필터하지 않음**.
+  - Anthropic Usage Policies + 한국 PIPA 제22조(동의) + 제23조(민감정보 국외이전) 동시 위반.
+  - Branch A 전제("관계 대화는 외부로 안 나간다") 마케팅 클레임이 개발 단계부터 깨져 기만적 표시가 됨.
+- **대안**:
+  - 개발 단계는 **합성 대화 데이터** 전용. 커플 갈등 시나리오 생성기 sub-agent(`@synthetic-dialogue-generator`) 신설.
+  - 임상심리사 자문 + 자체 제작 시나리오 라이브러리(`workflows/_shared/synthetic-dialogues/`)에 YAML로 관리.
+  - 실사용자 대화가 필요한 검증은 **현장 유저 테스트 단계**에서만, IRB 또는 그에 준하는 동의 프로세스 이후.
+- **연관 Hook**: `block_pii_in_prompts.py` (C2) — Claude 호출 직전 PII 패턴 탐지 시 exit 2.
+
+### NO-3 — 하네스 지침(CLAUDE.md·agent instruction)만으로 안전 경계 방어
+
+- **왜 실패하는가**:
+  - LLM은 long-context 중간 지침을 무시하는 경향이 확률적으로 존재(여러 연구 확인). 안전 경계는 확률에 맡길 수 없음.
+  - 심리 도메인의 실수 한 번이 Character.ai 류 소송·BetterHelp 류 FTC 제재로 연결.
+  - CLAUDE.md는 수정·삭제·주석 처리 가능 — 유지보수 중 누가 건드리면 방어망 증발.
+- **대안**:
+  - 경계 규칙을 **Hook + validator 스크립트**로 이중화 (원칙 3 / C2).
+  - 지침 파일(CLAUDE.md, agents/*.md)은 **설명·가이드** 역할에 한정. 강제 차단은 코드 레벨.
+  - Hook 스크립트 자체를 수정하려는 변경은 `DECISION-LOG.md` ADR 필수로 정책화.
+
+### NO-4 — "Agent Team 50+ 병렬로 속도 극대화" 설계
+
+- **왜 실패하는가**:
+  - Task tool 공식 한 턴 병렬 실측 상한 **5-10개** (Claude Code 공식 문서 + 커뮤니티 벤치). 이 이상은 컨텍스트 주입 충돌 + API rate limit로 실패율 급증.
+  - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`은 실험적 플래그. 프로덕션 신뢰성 미검증 — 관계 코칭 앱처럼 규제 민감 도메인에서 실험 기능 의존은 리스크 과다.
+  - 병렬도가 높을수록 SOT(`state.yaml`) 쓰기 충돌 가능성 증가 — 절대 기준 2 위반 위험.
+- **대안**:
+  - 기능 단위 순차 실행을 기본선으로. 같은 feature 내 **서브태스크**만 5 이하 병렬.
+  - Agent Team은 `.claude/agents/` 에 5 teammate 이하 구성. 조사용 fork는 최대 4(예: 이번 PRD 사전 리서치).
+  - 병렬 작업 필요 시 Orchestrator가 결과 수집·머지 단계를 별도로 두고, 병렬 에이전트는 **읽기 전용** 또는 자신의 고유 디렉터리(`workspace/<agent-id>/`)에만 쓰기.
+
+### NO-5 — "완전 로컬 앱" 마케팅 클레임 + 어떤 외부 API라도 호출
+
+- **왜 실패하는가**:
+  - "관계 대화 절대 외부로 안 나감" 마케팅 카피를 내걸고 결제(Stripe), 관측성(Sentry), 푸시(FCM/APNs) 중 하나라도 네트워크 호출하면 **기만적 표시**가 됨.
+  - 한국 표시·광고의 공정화에 관한 법률 제3조(부당한 표시·광고 행위 금지) 위반. 공정위 조사·과징금 리스크.
+  - Consumer Reports 2023 조사 등 프라이버시 광고 관련 소송 전례. "E2E"·"로컬"·"never leaves your device" 같은 표현은 정확성 입증 책임 공급자에게 귀속.
+- **대안**:
+  - **정밀 표기**: "대화 내용은 기기에만 저장·처리됩니다. 결제·에러 리포트·푸시 알림은 서비스 운영을 위해 암호화된 형태로 별도 전송됩니다."
+  - 프라이버시 페이지에 **데이터 흐름 다이어그램** 공개. 어떤 데이터가 어디로 가는지 시각화.
+  - Branch A 채택 시에도 설정 UI에서 "결제·관측성 동의" 분리 토글 제공. 사용자가 opt-out 가능한 경로 설계.
+
+### NO-6 — Claude Code를 최종 사용자 앱의 런타임으로 가정
+
+- **왜 실패하는가**:
+  - Claude Code는 **개발 도구**. 사용자 앱 내부에서 Claude Code가 동작하지 않음.
+  - 앱 런타임에 AI가 필요하면 **Anthropic API(Branch B)** 또는 **로컬 LLM(Branch A의 Tier 1·2)**.
+  - 하네스는 그것을 호출하는 앱 코드를 **생성**할 뿐, 자신이 앱 안으로 들어가지 않음.
+- **대안**: 원칙 1 (§1) — Dual-Layer 엄격 분리. [L0] 하네스 ≠ [L1] 앱 런타임.
+- **실무 함의**:
+  - 앱 내 AI 호출 레이어는 **독립 추상화**(`product/app/src/ai-client.ts` 등). 구현체는 `LocalLLMClient`(Branch A)·`AnthropicAPIClient`(Branch B)·`HybridClient`(3-tier)로 교체 가능.
+  - 이 추상화는 `workflows/feature-ai-client-abstraction.md`로 별도 워크플로우 작성.
+
+### 결정 로그 연동
+
+- NO-1, NO-2, NO-6은 `meta/discarded-options.md`의 D-3, D-7, D-6과 각각 동일 사안. 상세 기각 근거는 해당 파일 참조.
+- NO-3, NO-4, NO-5는 본 보고서 T1에서 최초 제기. 후속 차수에서 별도 ADR 등록 후보.
+
+---
