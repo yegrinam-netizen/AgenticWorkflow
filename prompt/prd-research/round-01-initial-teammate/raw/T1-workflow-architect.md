@@ -318,3 +318,86 @@ Branch A 선택이 하네스에 미치는 영향은 "앱 런타임 제약을 하
 - **Pure Branch A 기각 사유**: `meta/discarded-options.md#D-1` 참조. 본 §4.2는 **Hybrid 아키텍처의 Tier 1(로컬 경량)** 컴포넌트로 재활용된다는 전제 아래 기술.
 
 ---
+
+## §5. Branch B 상세 결론 (Cloud-Native Feature-Rich)
+
+**가정**: 서버 중심 아키텍처, 대화 본문은 서버 측 암호화 저장·추론. E2E 암호화는 파트너 공유 채널 등 제한적으로 적용. AI 품질·크로스디바이스 연속성·코칭 연속성을 우선.
+
+### 5.1 하네스 자체 구조 (Branch B 전제에 맞춘 [L0] 설계)
+
+- **`.claude/agents/` 구성 (Branch B 특화)**:
+  - `@cloud-cost-optimizer` (신규) — Anthropic·OpenAI·Google Gemini API 비용 분석·프롬프트 캐시·토큰 압축·동적 모델 라우팅.
+  - `@backend-architect` (신규) — Supabase·Neon·Cloudflare Workers·Fly.io·AWS 등 런타임 선택·데이터 레지던시·스케일링 설계.
+  - `@data-governance-designer` (신규) — PIPA 제23조 민감정보 국외이전 동의 UX·DPA 템플릿·감사 로그·데이터 보존/파기 정책.
+  - `@observability-engineer` (신규) — 관측성·에러 추적·레이트 리밋 대응·SLO/SLA 설계.
+  - 공통 재사용: `@conflict-psychology-researcher`, `@regulatory-compliance-auditor`, `@persona-empathy-simulator`, `@translator`, `@reviewer`, `@fact-checker`.
+
+- **`workflows/` 카탈로그 (Branch B 전용 feature)**:
+  - `feature-backend-api-gateway.md` — 인증된 앱 호출을 수신하여 LLM API로 라우팅하는 게이트웨이. Rate limit·비용 쿼터·모델 선택 정책 내장.
+  - `feature-prompt-cache-optimization.md` — Anthropic prompt caching(2024 GA)로 시스템 프롬프트 캐시 → 토큰 90% 절감 패턴.
+  - `feature-cross-device-sync.md` — 사용자 인증 기반 기기 간 세션 동기화. E2E 암호화 옵션 토글.
+  - `feature-session-summary-retention.md` — 세션 장기 요약(개인화) 저장 + 사용자 요청 시 전량 삭제(GDPR Article 17, PIPA 제36조).
+  - `feature-admin-dashboard.md` — 운영자용 대시보드(집계 통계만 노출, 개별 대화 열람 금지가 기본 원칙).
+  - `feature-stripe-toss-billing.md` — Stripe + 토스페이먼츠 이중 결제. Apple/Google IAP 병행 (2022 인앱결제 강제 대응법 이후 외부결제 조건부 허용).
+
+- **Hook 구성 (Branch B 특화 강화)**:
+  - `validate_data_residency.py` (신규, Stop) — 백엔드 코드에 서울 리전(ap-northeast-2) 외 데이터 저장 경로가 있는지 AST 레벨 탐지. PIPA 제28조의8 국외이전 요건 회피.
+  - `validate_dpa_coverage.py` (신규, PreToolUse on DB migration) — 신규 테이블이 민감정보 컬럼을 포함할 때 DPA(Data Processing Agreement)·RoPA(Record of Processing Activities) 업데이트 필요 알림.
+  - `block_plaintext_conversation_storage.py` (신규, PostToolUse(Edit|Write)) — DB 스키마·ORM 모델에서 대화 본문 컬럼이 암호화(pgcrypto·AES·KMS) 없이 정의되면 exit 2.
+  - 기존 `output_secret_filter.py`로 API 키·JWT·DATABASE_URL 유출 방지(이미 구현).
+
+- **환경 변수·비밀 관리 (하네스 레벨)**:
+  - Anthropic API 키는 로컬 `.env.local`(gitignored) + 프로덕션은 서버 시크릿 매니저(AWS Secrets Manager·Doppler·Cloudflare Secrets).
+  - 하네스 자체 개발 시 Anthropic API 호출은 ADR 허용 범위 내. 그러나 실사용자 대화 데이터는 절대 투입 금지(NO-2).
+
+- **CI/CD 통합**:
+  - GitHub Actions에서 백엔드 → Fly.io/Cloudflare Workers/Supabase로 자동 배포. 하네스가 워크플로우 YAML 자동 생성.
+  - DB 마이그레이션은 수동 승인 게이트 권장 — `validate_dpa_coverage.py`가 경고만 내고 인간이 최종 승인.
+
+### 5.2 하네스가 생성하는 앱 아키텍처 (Branch B, [L1] 설계)
+
+- **레이어 구성**:
+  - **클라이언트**: React Native (모바일 우선) + Next.js (웹). 클라이언트는 경량 — 대화는 서버로 전송되어 처리.
+  - **API 게이트웨이**: Cloudflare Workers 또는 Fly.io의 Hono/Elysia. JWT 인증·레이트 리밋·관측성·비용 쿼터.
+  - **AI 오케스트레이션 서비스**:
+    - `AnthropicAPIClient` (Claude Sonnet/Opus) — 주력. 한국어 관계 상담 품질 최상.
+    - 대체/비용 최적화: Gemini 1.5 Pro·GPT-4 Turbo·로컬 호스팅 오픈소스(Solar/EXAONE on self-host).
+    - 동적 라우팅: 대화 복잡도에 따라 Haiku(단순 응답)·Sonnet(기본)·Opus(위기·복잡 갈등) 자동 선택.
+    - 프롬프트 캐시: 시스템 프롬프트·도메인 지식·사용자 프로파일 요약을 캐시 히트 형태로 전달.
+  - **백엔드 저장소**:
+    - PostgreSQL(Supabase/Neon) + pgcrypto. 대화 본문은 AES-256-GCM 컬럼 암호화. 키는 KMS 관리.
+    - 벡터 DB(pgvector·Pinecone)는 v1 범위 밖(개인화 고도화 단계에서 도입).
+  - **관측성·관리**:
+    - Sentry(에러)·PostHog(제품 분석, PII 제거 설정)·Better Stack(uptime·로그).
+    - LLM 비용 대시보드: 유저당 월 토큰·모델별 분포·크라이시스 세션 식별.
+
+- **데이터 저장 모델**:
+  - 서버 측 `users`·`sessions`·`messages`·`summaries`·`subscriptions` 테이블.
+  - `messages.body` 컬럼: `bytea`(암호화). 애플리케이션 레이어에서 복호화 후 LLM 호출.
+  - `audit_log`: 관리자 접근·삭제 요청 처리 기록. PIPA 제32조 + GDPR Article 30.
+  - 파트너 공유: 별도 `shared_sessions` 테이블, 양측 사용자 합의 플래그 + 접근 제어.
+
+- **보안·프라이버시 기본 설계**:
+  - **Zero-Knowledge 옵션**(유료 tier) — 대화 본문을 클라이언트에서 암호화해 서버에 저장, 서버 측 복호화 없이 LLM 호출은 제한(별도 엔클레이브 경로 필요). v1은 기본 제공 아님, 로드맵.
+  - **최소 수집 원칙**: 이메일·닉네임만 필수. 성별·나이·관계 유형은 선택. 결혼 상태·성 지향·종교 등 민감정보 **금지**(PIPA 제23조 회피).
+  - **감사·삭제**: 사용자 대시보드에 "데이터 다운로드(JSON)"·"계정 삭제(즉시 비식별화)" 버튼 의무화.
+  - **지역 제한**: 초기 서비스 지역 = 한국. 데이터 레지던시 = ap-northeast-2.
+
+- **배포·업데이트**:
+  - 앱 크기 경량(~50-100MB). OTA 업데이트(Expo Updates) 활용.
+  - 서버 배포: 주 1-2회 릴리스 권장. 대규모 DB 마이그레이션은 blue-green 또는 rolling.
+
+- **비용·수익 모델 (Branch B)**:
+  - LLM 호출 비용: 세션당 400원(Sonnet) × 월 8-15 세션 = 3,200-6,200원/유저/월(T4 §3.2). 구독가의 30-60%를 원가가 차지 — freemium 전환율 민감.
+  - 서버 인프라: 유저당 월 100-500원 예상(DB·관측성·게이트웨이).
+  - 공헌이익: 유료 구독 9,900원 기준 월 유저당 3,000-5,000원 수준 — 스케일·캐시 최적화로 개선 필수.
+
+- **리스크**:
+  - PIPA 제23조 민감정보 + 국외이전 이중 동의 리스크(T4 §6.1). Anthropic API 서버 위치(미국)가 기본 전제. 별도 동의 플로우 필수.
+  - BetterHelp 류 프라이버시 사고 선례(T2 §3.4, T4 §6.2). 광고 픽셀·SDK 도입 시 매우 조심. 기본 원칙: 광고 트래커 0개.
+  - Apple/Google 심사 강화(Character.ai 2024 소송 이후). 심리·AI 동반자 카테고리 추가 검토. 심사 거부 대응 시간 2-6주 예비.
+  - 네트워크 의존 → 오프라인 갈등 상황에서 응답 불가. UX에서 "안정적 Wi-Fi 권장"·간소 오프라인 모드(최근 세션 캐시 열람·프레임워크 가이드 읽기) 설계.
+
+- **Pure Branch B 기각 사유**: `meta/discarded-options.md#D-2` 참조. 본 §5.2는 **Hybrid 아키텍처의 Tier 2·3(클라우드 Sonnet·Opus+인간)** 컴포넌트로 재활용된다는 전제 아래 기술.
+
+---
