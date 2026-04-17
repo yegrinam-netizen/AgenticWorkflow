@@ -613,3 +613,90 @@ Pure A·Pure B 어느 쪽도 단독으로는 "상업화 가능한 관계 코칭 
 - **P-T1-19**: **장기 워크플로우 실패 시 롤백**. 중간 단계 실패 시 기생성 파일·DB 마이그레이션의 롤백 전략 미수립. `state.yaml` 체크포인트만으로는 부족.
 
 ---
+
+## §9. 후속 심층조사 필요 항목 (Q1-Q6)
+
+본 차수 T1 조사의 결론을 확정하기 위해 **다음 차수 이상**에서 해소되어야 하는 조사 질문. 각 질문은 **조사 방법 제안**과 **완료 판정 기준**을 함께 기록.
+
+### Q1. 한국어 로컬 LLM 관계 상담 품질 실측 (vs Claude Sonnet)
+
+- **질문**: EXAONE 3.5 7.8B·Solar Pro·Qwen 2.5 7B·Gemma 2 9B가 한국어 관계 갈등 상담 태스크에서 Claude Sonnet 대비 실제로 몇 %의 품질을 내는가?
+- **왜 필요**: §6.1 비교의 "60-70%" 수치는 KMMLU 일반 지식 점수 파생 추정치. 관계 상담은 감정 뉘앙스·안전 거버넌스·도메인 프레임워크 준수가 핵심이라 일반 벤치와 상관관계 낮을 수 있음. Hybrid Tier 1의 현실적 한계를 숫자로 특정해야 Tier 간 라우팅 임계치 설정 가능.
+- **조사 방법 제안**:
+  1. 합성 관계 갈등 시나리오 30-50개 준비 (Gottman 4 Horsemen 단계별 + 초기 오해부터 장기 긴장까지 다양).
+  2. Claude Sonnet을 reference로 응답 생성 + 임상심리사/커플 상담사 2-3인 블라인드 평가 (empathy·안전성·한국어 자연스러움·프레임워크 활용도 4축).
+  3. 동일 시나리오에 로컬 LLM 후보 모델 응답 비교 평가.
+  4. 결과 행렬을 `product/evaluation/local-llm-benchmark-<date>.md`로 기록.
+- **완료 판정 기준**: 4개 이상 로컬 모델 × 30+ 시나리오 × 3 평가자 점수 수집 완료 + Sonnet 대비 상대 점수 산출.
+- **참조**: `meta/discarded-options.md#D-1`의 Pure Branch A 부활 조건("Sonnet 대비 ≥90%")과 직접 연결.
+
+### Q2. 하네스 `workflows/` 카탈로그 초안 세트
+
+- **질문**: v1 관계 코칭 앱을 완성하기 위해 필요한 `workflows/feature-*.md` 목록은 무엇이고, 각 파일의 단계 수·의존성·우선순위는?
+- **왜 필요**: 원칙 2 (§1)와 C1 (§2)에서 카탈로그 구조를 제안했으나 **실제 목록**은 미작성. 이것이 없으면 `roadmap.yaml`도 스캐폴드만 있을 뿐 실행 불가.
+- **조사 방법 제안**:
+  1. T2(Scenario Explorer) 시나리오 우선순위 × T3(Operator Analyst) 페르소나 여정을 교차해 feature 목록 초안 추출.
+  2. 각 feature를 [UI][API][DB][AI][결제][관측성][규제] 축으로 태깅.
+  3. 의존성 그래프(DAG)로 시각화 — 순환·고아 노드 검출.
+  4. v1 범위(Phase 1) / v1.5 / v2 분류.
+- **완료 판정 기준**: feature 8-12개 명세 + `roadmap.yaml` 초안이 validation 통과.
+- **참조**: Q1 결과 + T2 §5 우선순위 + T3 §11 페르소나 결론.
+
+### Q3. Hook + validator 스크립트 상세 명세
+
+- **질문**: C2 (§2)에서 제안한 신규 Hook 5개 + 확장 2개 각각의 **패턴·예외·테스트 케이스**는 어떻게 구성되는가?
+- **왜 필요**: Hook은 exit 2로 강제 차단하므로 false positive 0에 가까워야 하고 false negative도 도메인 리스크 최소화 관점에서 엄격해야 함. 패턴 설계 없이 배포하면 개발 전체가 막힐 위험.
+- **조사 방법 제안**:
+  1. 각 Hook별 의도·매처·패턴 초안 작성.
+  2. 합성 예시 30-50개 (TP·TN·FP·FN 분포) 준비.
+  3. 기존 `_test_secret_filter.py`·`_test_sensitive_file_guard.py` 포맷 차용해 테스트 파일 작성.
+  4. 실제 hook 스크립트 구현 전 **pseudocode + 테스트 먼저** 작성 (TDD 모드).
+- **완료 판정 기준**: 신규 5 + 확장 2 각각 테스트 30+ 케이스 통과, false positive rate < 5%.
+- **참조**: 기존 `output_secret_filter.py`·`block_destructive_commands.py` 테스트 구조.
+
+### Q4. Sub-agent 5개 신규 상세 설계
+
+- **질문**: C3 (§2)의 `@conflict-psychology-researcher`·`@korean-relationship-culture-analyst`·`@crisis-protocol-verifier`·`@regulatory-compliance-auditor`·`@persona-empathy-simulator` 각각의 시스템 프롬프트·도메인 지식·허용 도구·출력 포맷은?
+- **왜 필요**: Agent 품질이 하네스 산출물의 도메인 정확성을 좌우. 피상적 프롬프트로 설계하면 일반 LLM 답변과 차이 없어짐.
+- **조사 방법 제안**:
+  1. 각 agent의 1차 입력·산출 형식·실패 모드 정의.
+  2. 참고 문헌·프레임워크(Gottman·NVC·IFS·SFBT·PIPA·의료법) 소스 매핑.
+  3. Agent md 템플릿 작성 후 실 시나리오 3-5개에서 시범 실행 → 피드백 기반 개선.
+  4. 번역·리뷰어 agent와의 조합 패턴(예: researcher → reviewer → translator) 명세.
+- **완료 판정 기준**: agent md 5개 완성 + 시범 실행 결과 로그 보관.
+
+### Q5. MCP 서버 후보 상세 평가
+
+- **질문**: C4 (§2)의 Expo EAS·Stripe·Supabase·Playwright·Sentry MCP 각각의 **인증 방식·rate limit·비용·관측성·보안 리스크**는?
+- **왜 필요**: MCP 도입은 하네스 외부 경계 확장. 잘못된 선택 시 rate limit으로 워크플로우 무한 대기·비용 폭발·시크릿 유출 경로 증가.
+- **조사 방법 제안**:
+  1. 각 서비스 공식 MCP 또는 CLI 문서 수집.
+  2. 인증(API key·OAuth·service account) 저장 방식 비교.
+  3. rate limit·비용 테이블 정리.
+  4. 로컬 모킹 대체 가능성 평가.
+- **완료 판정 기준**: 5개 서비스 각각 결정 — 채택 / 조건부 채택 / 기각 + 근거.
+
+### Q6. 하네스 자기 수정 경계 정책
+
+- **질문**: 하네스가 `.claude/hooks/`·`.claude/agents/`·`CLAUDE.md`·`workflows/` 자체를 수정하는 워크플로우를 허용할 것인가, 그 경계·승인 게이트·감사 기록은?
+- **왜 필요**: P-T1-17 파킹 항목. 자기 수정 허용은 강력하지만 안전장치 없이는 하네스 신뢰성 붕괴.
+- **조사 방법 제안**:
+  1. 현 AgenticWorkflow `setup_maintenance.py`·`workflow-generator` 스킬의 메타 수정 범위 파악.
+  2. 허용/금지 파일 목록화.
+  3. 승인 게이트(PR 리뷰·2인 검토·ADR 필수) 규칙 초안.
+  4. `DECISION-LOG.md` 자동 기록 Hook 설계.
+- **완료 판정 기준**: 정책 문서 1편(`docs/protocols/harness-self-modification-policy.md`) + 관련 validator 스크립트 스펙.
+
+---
+
+## 조사 완료 근거 정리
+
+- 축 커버리지: `meta/axis.yaml`의 T1 axes 8개 모두 다룸 (harness-pipeline-structure·claude-md-and-dot-claude-directory·hooks-for-regulatory-and-privacy-guards·multi-agent-orchestration·external-tools-and-mcp-servers·claude-code-actual-limits·branch-a-app-architecture·branch-b-app-architecture).
+- 기각 결정 상호참조: `meta/discarded-options.md`의 D-1·D-2·D-3·D-5·D-6·D-7과 본 보고서 NO-1·NO-2·NO-3·NO-4·NO-6 연동.
+- 고정 전제 준수: `meta/assumptions.yaml`의 ADR-0001~0004 프레임 내에서 작성. Branch A·B는 [L1] 옵션이며 하네스([L0])는 로컬 불변 명시.
+- 미해결 축 파킹: §8 P-T1-1 ~ P-T1-19 → `parking-lot/round-01.parking-lot.md` 통합 예정.
+- 후속 조사 파킹: §9 Q1-Q6 → `follow-up-questions/round-01.follow-up.md` 통합 예정.
+- 종합 단계(PHASE 3·4) 미수행: Branch 간 수렴(ADR-0005 요약)은 상호참조 수준만 기술. 구체 Tier 경계·라우팅 임계치는 후속 차수 과제.
+
+본 raw 파일은 T1 teammate의 원문 보고서로 보존되며, 기계적 추출 결론은 `../summary/T1-workflow-architect.conclusions.md`에 별도 저장된다.
+
