@@ -99,3 +99,113 @@ notes:
 - **장기 경제성**: 1인 개발자는 $200/월로 연 $2,400 → 단일 feature 비용 $25-50 수준.
 
 ---
+
+## §2. 하네스 유지보수 부담 (Harness Maintenance Burden)
+
+### 2.1 유지보수 대상 자산 분류
+
+AgenticWorkflow 하네스의 유지보수 범위를 **정적 자산**과 **동적 자산**으로 분리한다.
+
+**정적 자산** (변동 빈도 낮음):
+- `CLAUDE.md`, `AGENTS.md`, `soul.md`, `DECISION-LOG.md`: 프로젝트 헌법. 분기 단위 업데이트.
+- `docs/protocols/*.md`: autopilot·quality-gates·ulw·context-preservation·code-change. 월 1-2회 수정.
+- `.claude/settings.json`: Hook 등록. 신규 Hook 추가 시만.
+
+**동적 자산** (변동 빈도 높음):
+- `.claude/hooks/scripts/*.py` (21개+ 스크립트): Claude Code 업데이트·신규 규칙 추가 시 수정.
+- `.claude/agents/*.md` (translator·reviewer·fact-checker): 도메인 확장·프롬프트 튜닝.
+- `.claude/commands/*.md` (/install·/maintenance): 워크플로우 진화에 따라.
+- `.claude/skills/workflow-generator/`, `doctoral-writing/`: 스킬 자체 진화.
+- `translations/glossary.yaml`: 번역 용어 누적.
+- `prompt/`, `coding-resource/`: 프로젝트 자료.
+
+### 2.2 유지보수 이벤트 유형별 예상 빈도
+
+| 이벤트 유형 | 예상 빈도 | 작업량 (1인 기준) |
+|---|---|---|
+| Claude Code 버전 업데이트 대응 | 월 1-2회 | 2-6시간 |
+| 새 Hook 추가 | 분기 1-2회 | 4-10시간 |
+| 기존 검증 스크립트 버그 수정 | 월 2-4회 | 1-3시간 |
+| Agent 프롬프트 튜닝 | 월 1-3회 | 1-4시간 |
+| 문서 동기화 (`/maintenance`) | 월 1회 | 30분-2시간 |
+| Workflow 템플릿 신규 추가 | 분기 1-2회 | 6-16시간 |
+| Glossary 용어 추가 | 주 1-2회 | 5-15분 |
+
+**월간 총계 (1인 유지보수)**: **10-30시간/월**. 1일 평균 30분-1시간 수준.
+
+### 2.3 디버깅 부담 패턴
+
+Hook 시스템·Sub-agent·병렬 실행이 얽히면 디버깅 난이도가 급상승한다. 실제 관찰된 패턴:
+
+**패턴 1 — Hook silent failure**:
+- `generate_context_summary.py` 등 Stop/SessionEnd hook은 stdout/stderr가 유저에게 노출되지 않음.
+- 증상: 스냅샷 파일이 생성되지 않거나 오래된 상태.
+- 디버깅: `.claude/hooks/logs/` (있다면) 확인 → `stderr | tee`로 수동 로그 주입 → 직접 실행.
+- 평균 해결 시간: 1-3시간.
+
+**패턴 2 — validate_*.py 규칙 충돌**:
+- `validate_pacs.py` PA3가 `validate_review.py` R2와 상호 의존할 때, 한쪽 스키마 변경 시 체인 실패.
+- 증상: 특정 작업 단계에서 모호한 exit 2.
+- 디버깅: 스크립트별 단독 실행 + 입력 재현.
+- 평균 해결 시간: 2-5시간.
+
+**패턴 3 — 컨텍스트 복원 실패**:
+- `restore_context.py`가 RLM 인덱스 손상 시 복원 무효화.
+- 증상: `[CONTEXT RECOVERY]` 표시는 있으나 내용이 비어 있음.
+- 디버깅: `.claude/context-snapshots/knowledge-index.jsonl` 수동 검증.
+- 평균 해결 시간: 30분-2시간.
+
+**패턴 4 — 병렬 Task 도구 결과 병합 오류**:
+- 5-10 Sub-agent 결과를 Orchestrator가 병합할 때 일부 누락.
+- 증상: summary/index 파일에 일부 teammate 결과가 빠짐.
+- 디버깅: 개별 Task 결과를 원천에서 재확인.
+- 평균 해결 시간: 1-2시간.
+
+**패턴 5 — `update_work_log.py` 9-도구 필터 drift**:
+- Claude Code 신규 도구 추가 시 work log 누락.
+- 증상: PostToolUse에서 특정 도구 이벤트가 기록되지 않음.
+- 평균 해결 시간: 30분-1시간.
+
+### 2.4 버전 드리프트 리스크
+
+- **Claude Code 업데이트 주기**: 약 2-4주. minor 업데이트마다 Hook signature·도구 목록·권한 모델 미세 변경 가능.
+- **드리프트 발생 지점**:
+  - `settings.json` hook 이벤트명 변경 → 모든 hook 무효화 리스크.
+  - 새 built-in 도구 추가 → `update_work_log.py` 필터 누락.
+  - Task tool 병렬 상한 정책 변경 → 워크플로우 병렬도 재조정 필요.
+  - MCP 서버 spec 변경 → `mcp__github__*` 도구 이름 변경.
+- **대응 전략**:
+  - `setup_maintenance.py`를 주 1회 자동 실행하여 드리프트 조기 감지.
+  - Claude Code CHANGELOG 모니터링 (공식 docs + `/help`).
+  - `/install` 명령으로 setup-init 검증 주기화.
+
+### 2.5 1인 vs 2인+ 팀 유지보수 비교
+
+| 항목 | 1인 개발 | 2인+ 팀 |
+|---|---|---|
+| 월 유지보수 부담 | 10-30시간 | 20-60시간 (분담 가능) |
+| SOT 동시 쓰기 충돌 리스크 | 없음 | 있음 — 절대 기준 2 엄격 적용 필요 |
+| CLAUDE.md 해석 불일치 | 낮음 | 중간 — 정기 리뷰 필요 |
+| Hook 실험 cost | 낮음 | 높음 (팀원 작업 블로킹 가능) |
+| 워크플로우 카탈로그 확장 속도 | 느림 | 빠름 |
+| 디버깅 burden 분담 | 불가 | 가능 (전문 분야 분리) |
+
+**1인의 핵심 리스크**: 번아웃·단일 장애점. **2인+의 핵심 리스크**: 컨벤션 표류.
+
+### 2.6 자동화 가능 유지보수 작업
+
+- ✅ Glossary 용어 추가: `translator` 서브에이전트가 자동 반영.
+- ✅ 드리프트 감지: `setup_maintenance.py` 주기 실행.
+- ✅ Hook 건강 검사: `/install` 명령.
+- ✅ SOT 스키마 검증: `validate_*.py` 14종.
+- ❌ Agent 프롬프트 품질 평가: 인간 판단 필요.
+- ❌ 새 Workflow 설계: `workflow-generator` 스킬 보조는 가능하나 최종 의사결정 인간.
+- ❌ Claude Code 신규 기능 통합: 사람이 문서 읽고 설계.
+
+### 2.7 유지보수 부담 종합 판정
+
+- **1인 1년 유지보수**: 연 120-360시간 = 월 10-30시간 = 전업 개발자 시간의 약 5-15%.
+- **핵심 부담**: Claude Code 버전 업데이트 대응이 절반 이상 차지.
+- **권장**: `setup_maintenance.py` 주 1회 자동 실행 + 월 1회 `/maintenance` 수동 수행 + 분기 1회 문서-코드 동기화 감사.
+
+---
