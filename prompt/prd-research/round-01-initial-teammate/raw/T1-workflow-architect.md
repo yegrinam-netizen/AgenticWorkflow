@@ -460,3 +460,119 @@ Pure A·Pure B 어느 쪽도 단독으로는 "상업화 가능한 관계 코칭 
 - 기존 Hook 세트 재사용 + `validate_tier_consent_flow.py` 신설.
 
 ---
+
+## §7. Claude Code 실제 한계 — 공식 기능 범위와 실무 병목
+
+하네스 설계에서 가장 자주 "되는 줄 알았는데 안 되는" 영역을 7개 축으로 정리. 각 한계는 **공식 사양 근거 + 실무 관찰 + 하네스 차원 우회책**을 함께 기록한다.
+
+### 7.1 컨텍스트 윈도우 — 공칭 200K·확장 1M vs 실질 60-70K
+
+- **공식 사양 (2026-04)**:
+  - Claude Opus 4.7·Sonnet 4.6 — 공칭 200K 토큰. Opus 4.7은 1M 토큰 확장 옵션.
+  - Claude Code는 시스템 프롬프트·CLAUDE.md·도구 결과·에이전트 출력을 모두 한 창에 쌓음.
+- **실무 관찰**:
+  - 워크플로우 한 번 실행에 **도구 결과**(Read·Bash·Grep)가 가장 빠르게 누적. Large repo grep 한 번에 5-15K 토큰.
+  - Sub-agent 호출의 결과 반환도 그대로 컨텍스트에 들어옴.
+  - 실질 **유효 활용 토큰은 60-70K** 수준. 그 이상이면 압축 트리거되거나 응답 품질 하락.
+- **하네스 차원 우회**:
+  - 원칙 2 (§1) — 기능 단위 workflow.md 카탈로그. 단일 workflow 하나가 40-60단계 내로 수렴.
+  - Sub-agent 결과를 SOT 파일에 먼저 저장하고 **요약만** 메인 컨텍스트로 가져오는 패턴.
+  - `generate_context_summary.py` (기존) — 증분 스냅샷 + Knowledge Archive로 과거 세션 참조 대체.
+  - `restore_context.py` (기존) — RLM 포인터로 knowledge-index.jsonl 쿼리 기반 접근.
+
+### 7.2 토큰 소비·구독 한도 — Max Plan·API 요금·5시간 rolling limit
+
+- **공식 사양 (2026-04)**:
+  - Claude Code 구독: Pro·Max 티어. Max Plan은 Opus/Sonnet 더 많은 할당. 단 **5시간 rolling limit** 존재.
+  - API 직접 사용 시 per-token 과금 — Opus 4.7 ~$15/$75 per 1M tokens (input/output, 변동 가능), Sonnet 4.6 ~$3/$15.
+  - Prompt caching: 시스템 프롬프트 캐시 적중 시 90% 할인.
+- **실무 관찰**:
+  - AgenticWorkflow 규모의 workflow 1회 실행 = 100K-500K 토큰(도구·에이전트 누적). Max Plan 5시간 한도에 2-5회 실행 수용.
+  - 장시간 워크플로우는 중간에 한도 hit → 세션 대기 또는 API 전환 필요.
+- **하네스 차원 우회**:
+  - 토큰 예산 도입: `validate_retry_budget.py` (기존)에 전역 토큰 예산 항목 추가 검토.
+  - 장시간 워크플로우는 체크포인트 설계 — 단계 완료 시 state 저장, 재시작 가능.
+  - CLAUDE.md·agent md의 prompt caching 최대 활용 (변경 빈도 낮은 파일 우선).
+
+### 7.3 Hooks — 조건 분기·우선순위·실패 전파
+
+- **공식 사양 (2026-04)**:
+  - Hook 이벤트: PreToolUse·PostToolUse·SessionStart·SessionEnd·PreCompact·Stop 등.
+  - 각 hook은 도구·이벤트 매처(regex)와 커맨드(스크립트)로 구성.
+  - exit code 0 = 정상 / 2 = 차단(LLM이 원인 메시지를 보게 됨) / 기타 = 에러로 보고.
+- **실무 관찰**:
+  - 여러 hook이 동시 매칭될 때 **순서는 settings.json 선언 순** — AgenticWorkflow는 `context_guard.py` 디스패처 통합으로 해결.
+  - 복잡한 분기 로직(예: "Bash 도구 + 커맨드에 git + 브랜치가 main"인 경우만)은 hook 스크립트 내부에서 구현해야 함.
+  - stderr 출력이 길면 LLM 컨텍스트 낭비 — 메시지 요약 중요.
+- **하네스 차원 우회**:
+  - `_context_lib.py` 공통 라이브러리로 hook 간 로직 공유.
+  - Hook 테스트 파일(`_test_*.py`)로 회귀 방지 — 기존 output_secret_filter 131 테스트 패턴 확장.
+  - 민감 도메인(관계 코칭)은 Hook을 **이중 방어**로 걸어 하나가 실패해도 보완되도록 설계.
+
+### 7.4 Sub-agent 병렬 — Task tool 한 턴 5-10개 상한
+
+- **공식 사양 (2026-04)**:
+  - Task tool(`Agent`)은 한 응답에 여러 subagent_type 호출을 병렬 실행 가능.
+  - 공식 문서 상 "병렬 가능"이라 명시하되 상한은 명시되지 않음.
+  - 실험적 플래그 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`로 Agent Team 구성 가능.
+- **실무 관찰**:
+  - 실측 5-10개 병렬에서 안정. 이를 초과하면 **컨텍스트 주입 충돌·API rate limit** 발생.
+  - Agent Team은 실험 단계 — 프로덕션 신뢰성 미검증.
+  - 병렬 수가 많을수록 SOT 쓰기 충돌 가능성 증가(절대 기준 2).
+- **하네스 차원 우회**:
+  - NO-4의 대안: 기능 단위 순차 + 같은 feature 내 서브태스크만 ≤5 병렬.
+  - 병렬 결과는 Orchestrator가 수집 후 머지하는 Fan-out/Fan-in 패턴.
+  - 병렬 에이전트는 **자기 전용 디렉터리**(`workspace/<agent-id>/`)에만 쓰기 허용 — SOT 직접 수정 금지.
+
+### 7.5 파일 쓰기·네트워크·쉘 — 권한 모델과 샌드박스
+
+- **공식 사양 (2026-04)**:
+  - Write·Edit·NotebookEdit 도구로 파일 작성. 경로 제한은 없고 사용자 OS 권한에 의존.
+  - Bash 도구로 쉘 명령 실행. 네트워크·시스템 호출 가능.
+  - Permission mode: acceptEdits·plan·bypassPermissions 등.
+- **실무 관찰**:
+  - 파괴적 명령(`rm -rf`, `git reset --hard`, `git push --force`) 실수가 치명적.
+  - 네트워크 호출(curl·wget)은 개발 도구로는 유용하지만 **실사용자 데이터 유출** 통로가 될 수 있음.
+  - 쉘에서 생성된 임시 파일(`/tmp/...`)에 시크릿 남을 수 있음.
+- **하네스 차원 우회**:
+  - `block_destructive_commands.py` (기존, 43 테스트) — 위험 명령 + 네트워크 유출 차단.
+  - `output_secret_filter.py` (기존, 131 테스트) — 도구 결과에서 시크릿 탐지.
+  - `security_sensitive_file_guard.py` (기존, 44 테스트) — 민감 파일 수정 경고.
+  - 신규 `validate_no_external_data_egress.py` (§4.1) — 대화 본문 외부 전송 코드 차단.
+
+### 7.6 CI/CD·모바일 빌드 — Claude Code 단독 불가 영역
+
+- **공식 사양 (2026-04)**:
+  - Claude Code는 빌드 도구가 아님. Bash로 외부 빌드 툴 호출만 가능.
+  - iOS 빌드는 macOS Xcode 필수. Android는 JDK + Android SDK + Gradle.
+- **실무 관찰**:
+  - Linux 하네스 환경에서 iOS 빌드 **불가**.
+  - 로컬 macOS가 있어도 사용자 PC 사양(CPU·디스크)에 따라 빌드 시간 비용 체감.
+  - Android도 Gradle 다운로드·빌드 시간이 노이즈.
+- **하네스 차원 우회**:
+  - **Expo EAS Cloud Build** (권장) — iOS/Android 모두 클라우드 빌드. 하네스가 `eas build` 명령어만 호출.
+  - **GitHub Actions macOS 러너** — 자체 CI 파이프라인 구성. 시간 비용 있음.
+  - **로컬 Android only + iOS는 EAS** 이중화도 가능.
+  - 하네스 워크플로우 `workflows/feature-mobile-build-pipeline.md`로 분리.
+
+### 7.7 DB·인증·결제 모킹 — 하네스 환경의 외부 의존
+
+- **공식 사양**: Claude Code는 Postgres·Redis·Stripe·OAuth 공급자를 직접 띄울 수 없음 (Bash 명령으로 컨테이너 실행만 가능).
+- **실무 관찰**:
+  - Postgres·Redis는 Docker Compose로 로컬 구동 용이. Supabase는 `supabase start` CLI 제공.
+  - Stripe는 테스트 모드 키로 대부분 검증 가능. 한국 PG(토스페이먼츠)는 실 계좌 없이는 end-to-end 테스트 제한.
+  - Apple IAP·Google Play Billing은 **실기기·실 스토어 빌드 필수** — 로컬에서 통합 테스트 어려움.
+  - OAuth(Apple·Google·Kakao)는 Redirect URI·도메인 등록 필요. 로컬 개발은 `localhost` 허용 범위 내에서만.
+- **하네스 차원 우회**:
+  - `workflows/feature-mock-environment.md` (신규) — 로컬 개발용 모의 서비스(WireMock·Mockoon) 구성. 하네스가 JSON 목·지연 시뮬레이션까지 생성.
+  - 결제 통합은 **단위·통합·E2E 분리 테스트 전략**: 단위는 모크, 통합은 Stripe 테스트 모드, E2E는 QA 단계 실기기.
+  - Secret은 `.env.local`(gitignored) + 프로덕션은 서버 시크릿 매니저로 이원화. `output_secret_filter.py`가 유출 방어.
+
+### 7.8 한계 종합과 하네스 설계 반영
+
+- 위 7개 한계는 "하네스가 모든 것을 자동화할 수 없다"는 현실 인정의 근거.
+- 자동화 우선 영역: UI·백엔드 API·DB 스키마·Hook/validator·워크플로우 문서·테스트 스캐폴드.
+- 인간 개입 영역: iOS/Android 최종 빌드 승인·결제 실 환경 테스트·암호 프로토콜 감수·심리 전문가 콘텐츠 감수·법무 리뷰.
+- `workflows/` 카탈로그는 자동화 가능 영역을 **명시적으로 구분**하고, 인간 개입 필요 단계를 `(human-gate)` 태그로 표기해야 한다.
+
+---
